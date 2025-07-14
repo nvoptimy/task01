@@ -8,7 +8,7 @@ aws cloudformation create-stack --stack-name project01 --template-body file://pr
 ```
 
 ## populate data into mariadb instance
-mysql/mariadb client needs to be installed for this to work
+mysql/mariadb client and aws-cli needs to be installed for this to work
 
 ```
 mysql --user=taskadmin01 --password=Ni8Q8rbv2cR35tf --host=$(aws rds describe-db-instances --db-instance-identifier mariadb01 --region eu-central-1 --query 'DBInstances[0].Endpoint.Address' --output text) <sql-data.sql
