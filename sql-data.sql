@@ -1,0 +1,11 @@
+create table project01.test  (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, content TEXT);
+INSERT INTO project01.test (content) VALUES ('text00');
+INSERT INTO project01.test (content) VALUES ('text01');
+INSERT INTO project01.test (content) VALUES ('text02');
+INSERT INTO project01.test (content) VALUES ('text03');
+INSERT INTO project01.test (content) VALUES ('text04');
+INSERT INTO project01.test (content) VALUES ('text05');
+INSERT INTO project01.test (content) VALUES ('text06');
+INSERT INTO project01.test (content) VALUES ('text07');
+INSERT INTO project01.test (content) VALUES ('text08');
+INSERT INTO project01.test (content) VALUES ('text09');

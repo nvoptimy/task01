@@ -1,0 +1,389 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: template for vpc, ecs cluster with php app (project01) and tests on single EC2 with Elastic IP and mariadb rds instance.
+
+Parameters:
+  vpccidrblock:
+    Type: String
+    Default: 10.0.0.0/16
+  subnet01cidr:
+    Type: String
+    Default: 10.0.1.0/24
+  subnet02cidr:
+    Type: String
+    Default: 10.0.2.0/24
+  instanceType:
+    Type: String
+    Default: t3.small
+    Description: instance type
+
+Resources:
+  vpc01:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref vpccidrblock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: vpc01
+
+  internetgateway01:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: internetgateway01
+
+  attachgateway01:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref vpc01
+      InternetGatewayId: !Ref internetgateway01
+
+  subnet01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      CidrBlock: !Ref subnet01cidr
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: subnet01
+
+  subnet02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      CidrBlock: !Ref subnet02cidr
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: subnet02
+
+  routetable01:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: routetable01
+
+  route01:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref routetable01
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref internetgateway01
+
+  subnetroutetableassociation01:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnet01
+      RouteTableId: !Ref routetable01
+
+  subnetroutetableassociation02:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnet02
+      RouteTableId: !Ref routetable01
+
+  rdssecuritygroup01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for mariadb01
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 93.152.161.57/32
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref securitygroup01
+      Tags:
+        - Key: Name
+          Value: rdssecuritygroup01
+
+  dbsubnetgroup01:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for mariadb01
+      SubnetIds:
+        - !Ref subnet01
+        - !Ref subnet02
+
+  mariadb01:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: mariadb01
+      AllocatedStorage: 20
+      DBInstanceClass: db.t4g.micro
+      DBName: project01
+      Engine: mariadb
+      EngineVersion: 11.4.5
+      MasterUsername: taskadmin01
+      MasterUserPassword: Ni8Q8rbv2cR35tf
+      VPCSecurityGroups:
+        - !Ref rdssecuritygroup01
+      DBSubnetGroupName: !Ref dbsubnetgroup01
+      PubliclyAccessible: true
+      StorageType: gp2
+      BackupRetentionPeriod: 0
+      Tags:
+        - Key: Name
+          Value: mariadb01
+
+  securitygroup01:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: sg for ecs services
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 93.152.161.57/32
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Sub ${elasticip01}/32
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: securitygroup01
+
+  securitygroupingress01:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref securitygroup01
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref securitygroup01
+
+  ecscluster01:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: ecscluster01
+      Tags:
+        - Key: Name
+          Value: ecscluster01
+
+  ecsinstanceprofile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ecsrole
+
+  ecsrole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+  ecsinstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref instanceType
+      SubnetId: !Ref subnet01
+      SecurityGroupIds:
+        - !Ref securitygroup01
+      IamInstanceProfile: !Ref ecsinstanceprofile
+      ImageId: "{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id}}"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          echo "Starting ECS setup at $(date)" > /var/log/ecs-start.log
+          yum update -y
+          yum install -y awslogs amazon-ssm-agent ecs-init curl jq
+          echo ECS_CLUSTER=${ecscluster01} > /etc/ecs/ecs.config
+          echo ECS_LOGLEVEL=debug >> /etc/ecs/ecs.config
+          echo ECS_AVAILABLE_LOGGING_DRIVERS='["awslogs"]' >> /etc/ecs/ecs.config
+          echo ECS_AGENT_PID_NAMESPACE_HOST=true >> /etc/ecs/ecs.config
+      Tags:
+        - Key: Name
+          Value: ecsinstance01
+
+  elasticip01:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: elasticip01
+
+  eipassociation01:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref ecsinstance
+      EIP: !Ref elasticip01
+
+  taskdefinition01:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: project01
+      NetworkMode: host
+      RequiresCompatibilities:
+        - EC2
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn: !GetAtt ecsexecutionrole.Arn
+      TaskRoleArn: !GetAtt ecstaskrole.Arn
+      ContainerDefinitions:
+        - Name: project01
+          Image: ghcr.io/nvoptimy/task01/project01:kek
+          Essential: true
+          PortMappings:
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref loggroup01
+              awslogs-region: eu-central-1
+              awslogs-stream-prefix: project01
+          Environment:
+            - Name: APP_DB_HOST
+              Value: !GetAtt mariadb01.Endpoint.Address
+            - Name: APP_DB_USER
+              Value: taskadmin01
+            - Name: APP_DB_PASS
+              Value: Ni8Q8rbv2cR35tf
+            - Name: APP_DB_NAME
+              Value: project01
+
+  ecsservice01:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ecscluster01
+      ServiceName: ecsservice01
+      TaskDefinition: !Ref taskdefinition01
+      DesiredCount: 1
+      LaunchType: EC2
+      SchedulingStrategy: REPLICA
+      Tags:
+        - Key: Name
+          Value: ecsservice01
+
+  taskdefinition02:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: tests-task
+      NetworkMode: host
+      RequiresCompatibilities:
+        - EC2
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn: !GetAtt ecsexecutionrole.Arn
+      TaskRoleArn: !GetAtt ecstaskrole.Arn
+      ContainerDefinitions:
+        - Name: tests
+          Image: ghcr.io/nvoptimy/task01/tests:latest
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref loggroup01
+              awslogs-region: eu-central-1
+              awslogs-stream-prefix: tests
+          Environment:
+            - Name: APP_DB_HOST
+              Value: !GetAtt mariadb01.Endpoint.Address
+            - Name: APP_DB_USER
+              Value: taskadmin01
+            - Name: APP_DB_PASS
+              Value: Ni8Q8rbv2cR35tf
+            - Name: APP_DB_NAME
+              Value: project01
+            - Name: APP_PAGE_HOST
+              Value: !Sub http://${elasticip01}/
+
+  ecsservice02:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref ecscluster01
+      ServiceName: ecsservice02
+      TaskDefinition: !Ref taskdefinition02
+      LaunchType: EC2
+      SchedulingStrategy: DAEMON
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      Tags:
+        - Key: Name
+          Value: ecsservice02
+
+  ecsexecutionrole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  ecstaskrole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ecsaccesspolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+
+  loggroup01:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/project01
+      RetentionInDays: 7
+
+Outputs:
+  vpcid:
+    Description: ID of vpc01
+    Value: !Ref vpc01
+  ecsclustername:
+    Description: Name of ecs cluster
+    Value: !Ref ecscluster01
+  ecsservicename01:
+    Description: Name of ecs service
+    Value: !Ref ecsservice01
+  ecsservicename02:
+    Description: Name of ecs service2
+    Value: !Ref ecsservice02
+  mariadbendpoint:
+    Description: Endpoint of mariadb
+    Value: !GetAtt mariadb01.Endpoint.Address
+  webpageip:
+    Description: Elastic IP
+    Value: !Ref elasticip01

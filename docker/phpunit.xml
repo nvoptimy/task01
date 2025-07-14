@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.0/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+	colors="true">
+    <testsuites>
+        <testsuite name="Application Test Suite">
+            <file>tests/AppTests.php</file>
+        </testsuite>
+    </testsuites>
+    <php>
+	    <env name="APP_PAGE_HOST" value="http://php-app"/>
+        <env name="APP_DB_HOST" value="mariadb"/>
+        <env name="APP_DB_USER" value="project01"/>
+        <env name="APP_DB_NAME" value="project01"/>
+        <env name="APP_DB_PASS" value="Ni8Q8rbv2cR35tf"/>
+    </php>
+</phpunit>
