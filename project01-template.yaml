@@ -244,7 +244,7 @@ Resources:
       TaskRoleArn: !GetAtt ecstaskrole.Arn
       ContainerDefinitions:
         - Name: project01
-          Image: ghcr.io/nvoptimy/task01/project01:kek
+          Image: ghcr.io/nvoptimy/task01/project01:latest
           Essential: true
           PortMappings:
             - ContainerPort: 80
